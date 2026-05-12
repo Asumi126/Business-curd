@@ -1,0 +1,18 @@
+{
+  "mcpServers": {
+    "ccagi-tools": {
+      "args": [],
+      "command": "/Users/fujimotoaiju/.ccagi/bin/ccagi-tools-server",
+      "env": {
+        "HOME": "/Users/fujimotoaiju"
+      }
+    },
+    "pil-mcp": {
+      "args": [],
+      "command": "/Users/fujimotoaiju/.ccagi/bin/pil-mcp",
+      "env": {
+        "HOME": "/Users/fujimotoaiju"
+      }
+    }
+  }
+}

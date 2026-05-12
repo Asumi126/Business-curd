@@ -1,0 +1,145 @@
+@import "tailwindcss";
+
+:root {
+  --background: #ffffff;
+  --foreground: #171717;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+}
+
+html,
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family:
+    -apple-system, BlinkMacSystemFont, "Hiragino Sans", "Hiragino Kaku Gothic ProN",
+    "Yu Gothic", Meiryo, "Helvetica Neue", Arial, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+* {
+  -webkit-tap-highlight-color: transparent;
+}
+
+input,
+textarea,
+button,
+select {
+  font: inherit;
+}
+
+.card-frame {
+  isolation: isolate;
+}
+
+.card-frame * {
+  -webkit-print-color-adjust: exact;
+  print-color-adjust: exact;
+}
+
+[data-contact-prefix="minimal"] .card-frame .flex > svg:first-child {
+  display: none;
+}
+[data-contact-prefix="minimal"] .card-frame [class*="grid"] > div > svg:first-child,
+[data-contact-prefix="minimal"] .card-frame [class*="grid"] > span > svg:first-child {
+  display: none;
+}
+
+/* Allow \n in addressLine to render as line break (used for "stacked" address layout) */
+.card-frame .flex,
+.card-frame .grid,
+.card-frame > div {
+  white-space: pre-line;
+}
+
+/* Universal layout safety net for all card templates.
+ * Even when fields contain unexpectedly long text (long titles, full email
+ * addresses, multi-line addresses), the card layout must not collapse or
+ * push elements out of place. */
+.card-frame {
+  contain: paint;
+}
+
+/* Allow flex/grid children to shrink below their intrinsic content size —
+ * this is what stops a long email/URL from blowing the layout out. */
+.card-frame .flex > *,
+.card-frame [class*="grid-cols"] > *,
+.card-frame [class*="flex-row"] > *,
+.card-frame [class*="flex-col"] > * {
+  min-width: 0;
+}
+
+/* URLs/emails/long text without spaces wrap inside the card instead of
+ * overflowing or pushing siblings. This applies to every text role. */
+.card-frame [data-role="contact"],
+.card-frame [data-role="contact"] *,
+.card-frame [data-role="company"],
+.card-frame [data-role="title"],
+.card-frame [data-role="tagline"],
+.card-frame [data-role="name"],
+.card-frame [data-role="nameEn"] {
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  hyphens: auto;
+  -webkit-hyphens: auto;
+  max-width: 100%;
+}
+
+/* Hard cap so the name never explodes vertically when extremely long;
+ * line-clamp-2 keeps the layout predictable. */
+.card-frame [data-role="name"] {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+/* Title and tagline at most 2 lines too */
+.card-frame [data-role="title"],
+.card-frame [data-role="tagline"] {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+/* Icons in contact rows align with the first line of text. */
+.card-frame [data-role="contact"] .flex {
+  align-items: center;
+}
+
+/* Contact rows are always clipped to the card width. */
+.card-frame [data-role="contact"] > div,
+.card-frame [data-role="contact"] > span {
+  max-width: 100%;
+}
+
+/* The app intentionally does NOT support window.print(). Printing the
+ * live HTML produces unpredictable results across browsers/printers
+ * (page splitting, scaling, bleed loss). All printing is done via the
+ * generated A4 multi-up PDF, which guarantees fixed dimensions. */
+@media print {
+  body::before {
+    content: "印刷はダウンロードしたA4 PDFをお使いください。ブラウザ直接印刷はサポートしていません。";
+    display: block;
+    padding: 30mm 20mm;
+    font-family: sans-serif;
+    font-size: 14pt;
+    text-align: center;
+  }
+  body * {
+    display: none !important;
+  }
+}
+
+/* Hide scrollbar in card preview but keep scroll capability */
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
