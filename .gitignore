@@ -133,3 +133,4 @@ gitleaks*.log
 **/.pil-state/*.build-crates-dynamic
 **/.pil-state/*.pid
 **/.pil-state/*.exit
+.vercel

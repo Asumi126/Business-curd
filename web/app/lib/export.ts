@@ -350,6 +350,13 @@ export async function downloadA4MultiUpPdf(
     backNode?: ExportTarget | null;
     duplexMode?: DuplexMode;
     gapMm?: number;
+    /** 印刷塗り足し (mm)。家庭用プリンタの両面印刷ハードウェア精度(±1-3mm)を
+     *  吸収するため、各カードに塗り足しを追加し、ユーザは内側のトリムラインで
+     *  切り抜く。デフォルト 2mm。0 にすると従来通り塗り足しなし。 */
+    bleedMm?: number;
+    /** 表/裏アライメント確認用のレジストレーションマーク(コーナー十字)を
+     *  ページ4隅に印字。両面印刷時に紙を透かして確認できる。デフォルト true。 */
+    registrationMarks?: boolean;
   } = {},
 ): Promise<MultiUpLayout & { gapMm: number }> {
   const {
@@ -361,10 +368,16 @@ export async function downloadA4MultiUpPdf(
     backNode = null,
     duplexMode = "single",
     gapMm = 0,
+    bleedMm = 3, // CardFrame BLEED_MM と一致 → bleed=true キャプチャをそのまま配置可能
+    registrationMarks = true,
   } = options;
   const pixelRatio = quality === "print" ? HIGH_DPI_PIXEL_RATIO : STANDARD_PIXEL_RATIO;
 
-  const layout = computeA4MultiUpLayout(cardWidthMm, cardHeightMm, gapMm);
+  // 塗り足し込みのカード外寸 (例: 91+2*2 = 95mm, 55+2*2 = 59mm)
+  const bleedW = cardWidthMm + bleedMm * 2;
+  const bleedH = cardHeightMm + bleedMm * 2;
+  // レイアウトは塗り足し込みサイズで計算 (gridに収まる枚数が減る場合あり)
+  const layout = computeA4MultiUpLayout(bleedW, bleedH, gapMm);
   const frontPng = await captureAsPng(frontNode, pixelRatio);
   const includeBack = duplexMode !== "single" && !!backNode;
   let backPng = includeBack ? await captureAsPng(backNode!, pixelRatio) : null;
@@ -393,15 +406,52 @@ export async function downloadA4MultiUpPdf(
     keywords: "business card, A4, 210x297, print-ready",
   });
 
+  // 配置時のヘルパー: 各カードはレイアウト上 bleedW×bleedH の枠を占有する。
+  // 画像(frontPng/backPng)は塗り足し込みのコンテンツが含まれている前提で、
+  // bleed枠いっぱいに引き伸ばして配置する。トンボ(切り取り線)は内側の
+  // 91×55mm(=cardWidthMm×cardHeightMm)のトリムラインに描画。
+  const drawCardAt = (
+    imgPng: string,
+    bleedX: number,
+    bleedY: number,
+  ) => {
+    pdf.addImage(imgPng, "PNG", bleedX, bleedY, bleedW, bleedH, undefined, "FAST");
+    // トリムマーク = 内側のカット位置(塗り足し2mm内側)
+    const trimX = bleedX + bleedMm;
+    const trimY = bleedY + bleedMm;
+    drawCutMarks(pdf, cutMarkStyle, trimX, trimY, cardWidthMm, cardHeightMm);
+  };
+
+  // A4 4隅のレジストレーションマーク(位置合わせ十字)を描画。
+  // 両面印刷時に紙を透かして見ると、表/裏の十字が重なれば完全アライメント。
+  const drawRegistrationMarks = () => {
+    if (!registrationMarks) return;
+    pdf.setDrawColor(0);
+    pdf.setLineWidth(0.2);
+    const insetMm = 8; // A4端から内側 8mm の位置
+    const crossR = 2.5; // 十字の腕の長さ
+    const corners: [number, number][] = [
+      [insetMm, insetMm],
+      [A4_WIDTH_MM - insetMm, insetMm],
+      [insetMm, A4_HEIGHT_MM - insetMm],
+      [A4_WIDTH_MM - insetMm, A4_HEIGHT_MM - insetMm],
+    ];
+    for (const [cx, cy] of corners) {
+      pdf.line(cx - crossR, cy, cx + crossR, cy);
+      pdf.line(cx, cy - crossR, cx, cy + crossR);
+      // 小さな円(センターポイント目印)
+      pdf.circle(cx, cy, 0.6);
+    }
+  };
+
   // Page 1: Front
   pdf.setDrawColor(180);
   pdf.setLineWidth(0.1);
   for (let row = 0; row < layout.rows; row++) {
     for (let col = 0; col < layout.columns; col++) {
-      const x = layout.marginX + col * (cardWidthMm + gapMm);
-      const y = layout.marginY + row * (cardHeightMm + gapMm);
-      pdf.addImage(frontPng, "PNG", x, y, cardWidthMm, cardHeightMm, undefined, "FAST");
-      drawCutMarks(pdf, cutMarkStyle, x, y, cardWidthMm, cardHeightMm);
+      const x = layout.marginX + col * (bleedW + gapMm);
+      const y = layout.marginY + row * (bleedH + gapMm);
+      drawCardAt(frontPng, x, y);
     }
   }
   if (cutMarkStyle === "template-grid") {
@@ -409,15 +459,16 @@ export async function downloadA4MultiUpPdf(
     pdf.setLineWidth(0.15);
     drawTemplateGrid(
       pdf,
-      layout.marginX,
-      layout.marginY,
+      layout.marginX + bleedMm,
+      layout.marginY + bleedMm,
       cardWidthMm,
       cardHeightMm,
       layout.columns,
       layout.rows,
-      gapMm,
+      bleedMm * 2 + gapMm,
     );
   }
+  drawRegistrationMarks();
 
   // Page 2: Back, with grid mirrored according to duplex flip mode
   if (backPng) {
@@ -433,10 +484,9 @@ export async function downloadA4MultiUpPdf(
         } else if (duplexMode === "short-edge") {
           placeRow = layout.rows - 1 - row;
         }
-        const x = layout.marginX + placeCol * (cardWidthMm + gapMm);
-        const y = layout.marginY + placeRow * (cardHeightMm + gapMm);
-        pdf.addImage(backPng, "PNG", x, y, cardWidthMm, cardHeightMm, undefined, "FAST");
-        drawCutMarks(pdf, cutMarkStyle, x, y, cardWidthMm, cardHeightMm);
+        const x = layout.marginX + placeCol * (bleedW + gapMm);
+        const y = layout.marginY + placeRow * (bleedH + gapMm);
+        drawCardAt(backPng, x, y);
       }
     }
     if (cutMarkStyle === "template-grid") {
@@ -444,15 +494,16 @@ export async function downloadA4MultiUpPdf(
       pdf.setLineWidth(0.15);
       drawTemplateGrid(
         pdf,
-        layout.marginX,
-        layout.marginY,
+        layout.marginX + bleedMm,
+        layout.marginY + bleedMm,
         cardWidthMm,
         cardHeightMm,
         layout.columns,
         layout.rows,
-        gapMm,
+        bleedMm * 2 + gapMm,
       );
     }
+    drawRegistrationMarks();
   }
 
   pdf.save(filename);
@@ -478,6 +529,8 @@ export async function openA4MultiUpPdfForPrint(
     backNode?: ExportTarget | null;
     duplexMode?: DuplexMode;
     gapMm?: number;
+    bleedMm?: number;
+    registrationMarks?: boolean;
   } = {},
 ): Promise<{ layout: MultiUpLayout & { gapMm: number }; url: string }> {
   const {
@@ -488,10 +541,14 @@ export async function openA4MultiUpPdfForPrint(
     backNode = null,
     duplexMode = "single",
     gapMm = 0,
+    bleedMm = 3,
+    registrationMarks = true,
   } = options;
   const pixelRatio = quality === "print" ? HIGH_DPI_PIXEL_RATIO : STANDARD_PIXEL_RATIO;
 
-  const layout = computeA4MultiUpLayout(cardWidthMm, cardHeightMm, gapMm);
+  const bleedW = cardWidthMm + bleedMm * 2;
+  const bleedH = cardHeightMm + bleedMm * 2;
+  const layout = computeA4MultiUpLayout(bleedW, bleedH, gapMm);
   const frontPng = await captureAsPng(frontNode, pixelRatio);
   const includeBack = duplexMode !== "single" && !!backNode;
   let backPng = includeBack ? await captureAsPng(backNode!, pixelRatio) : null;
@@ -515,15 +572,38 @@ export async function openA4MultiUpPdfForPrint(
     keywords: "business card, A4, 210x297, print-ready",
   });
 
-  // Page 1
+  const drawCardAt = (imgPng: string, bx: number, by: number) => {
+    pdf.addImage(imgPng, "PNG", bx, by, bleedW, bleedH, undefined, "FAST");
+    drawCutMarks(pdf, cutMarkStyle, bx + bleedMm, by + bleedMm, cardWidthMm, cardHeightMm);
+  };
+
+  const drawRegistrationMarks = () => {
+    if (!registrationMarks) return;
+    pdf.setDrawColor(0);
+    pdf.setLineWidth(0.2);
+    const insetMm = 8;
+    const crossR = 2.5;
+    const corners: [number, number][] = [
+      [insetMm, insetMm],
+      [A4_WIDTH_MM - insetMm, insetMm],
+      [insetMm, A4_HEIGHT_MM - insetMm],
+      [A4_WIDTH_MM - insetMm, A4_HEIGHT_MM - insetMm],
+    ];
+    for (const [cx, cy] of corners) {
+      pdf.line(cx - crossR, cy, cx + crossR, cy);
+      pdf.line(cx, cy - crossR, cx, cy + crossR);
+      pdf.circle(cx, cy, 0.6);
+    }
+  };
+
+  // Page 1: Front
   pdf.setDrawColor(180);
   pdf.setLineWidth(0.1);
   for (let row = 0; row < layout.rows; row++) {
     for (let col = 0; col < layout.columns; col++) {
-      const x = layout.marginX + col * (cardWidthMm + gapMm);
-      const y = layout.marginY + row * (cardHeightMm + gapMm);
-      pdf.addImage(frontPng, "PNG", x, y, cardWidthMm, cardHeightMm, undefined, "FAST");
-      drawCutMarks(pdf, cutMarkStyle, x, y, cardWidthMm, cardHeightMm);
+      const x = layout.marginX + col * (bleedW + gapMm);
+      const y = layout.marginY + row * (bleedH + gapMm);
+      drawCardAt(frontPng, x, y);
     }
   }
   if (cutMarkStyle === "template-grid") {
@@ -531,16 +611,17 @@ export async function openA4MultiUpPdfForPrint(
     pdf.setLineWidth(0.15);
     drawTemplateGrid(
       pdf,
-      layout.marginX,
-      layout.marginY,
+      layout.marginX + bleedMm,
+      layout.marginY + bleedMm,
       cardWidthMm,
       cardHeightMm,
       layout.columns,
       layout.rows,
-      gapMm,
+      bleedMm * 2 + gapMm,
     );
   }
-  // Page 2 (back, mirrored according to duplex flip)
+  drawRegistrationMarks();
+  // Page 2: Back, mirrored according to duplex flip
   if (backPng) {
     pdf.addPage([210, 297], "portrait");
     pdf.setDrawColor(180);
@@ -551,10 +632,9 @@ export async function openA4MultiUpPdfForPrint(
         let placeRow = row;
         if (duplexMode === "long-edge") placeCol = layout.columns - 1 - col;
         else if (duplexMode === "short-edge") placeRow = layout.rows - 1 - row;
-        const x = layout.marginX + placeCol * (cardWidthMm + gapMm);
-        const y = layout.marginY + placeRow * (cardHeightMm + gapMm);
-        pdf.addImage(backPng, "PNG", x, y, cardWidthMm, cardHeightMm, undefined, "FAST");
-        drawCutMarks(pdf, cutMarkStyle, x, y, cardWidthMm, cardHeightMm);
+        const x = layout.marginX + placeCol * (bleedW + gapMm);
+        const y = layout.marginY + placeRow * (bleedH + gapMm);
+        drawCardAt(backPng, x, y);
       }
     }
     if (cutMarkStyle === "template-grid") {
@@ -562,15 +642,16 @@ export async function openA4MultiUpPdfForPrint(
       pdf.setLineWidth(0.15);
       drawTemplateGrid(
         pdf,
-        layout.marginX,
-        layout.marginY,
+        layout.marginX + bleedMm,
+        layout.marginY + bleedMm,
         cardWidthMm,
         cardHeightMm,
         layout.columns,
         layout.rows,
-        gapMm,
+        bleedMm * 2 + gapMm,
       );
     }
+    drawRegistrationMarks();
   }
 
   const blob = pdf.output("blob");

@@ -884,32 +884,59 @@ export function Wizard({ onBackToSelector, appLabel = "名刺作成" }: WizardPr
               </div>
             );
           })()}
-          {/* 編集ページ用 Undo/Redo — ヘッダーには置かず、編集ステップ(2..9)の
-              コンテンツ上端に常時表示する。Step8Customize は内部にも別途
-              Undo/Redo を持つが、こちらは全編集ステップ共通の入口として機能する。 */}
-          {step >= 2 && step <= 9 && (
-            <div className="mb-4 flex items-center justify-end gap-1.5">
-              <span className="text-[10px] text-neutral-500 mr-1">編集の取り消し:</span>
+          {/* 編集ページ用ナビゲーション — 全ステップ(2..10)で「前のステップへ」+
+              Undo/Redo を上部に常時表示。長いステップでもスクロール不要で
+              前ページに戻れるようにする。 */}
+          {step >= 2 && step <= TOTAL_STEPS && (
+            <div className="mb-4 flex items-center justify-between gap-2 flex-wrap">
+              {/* 左側: 前のステップへ戻るボタン (step=2は「TOPへ戻る」) */}
               <button
                 type="button"
-                onClick={() => undo()}
-                disabled={!canUndo}
-                className={UNDO_REDO_BTN_CLASS}
-                title="一つ前の操作に戻る (⌘+Z / Ctrl+Z)"
-                aria-label="元に戻す"
+                onClick={() => {
+                  if (step <= 2) {
+                    setStep(1);
+                  } else {
+                    setStep((s) => s - 1);
+                  }
+                }}
+                className="flex items-center gap-1.5 text-[12px] font-bold text-neutral-700 bg-white border border-neutral-300 hover:border-blue-400 hover:text-blue-700 px-3 py-1.5 rounded-md shadow-sm transition"
+                title={
+                  step === 2
+                    ? "TOP画面に戻る"
+                    : `前のステップ「${STEP_LABELS[step - 2].replace(/\n/g, " ")}」に戻る`
+                }
               >
-                ↶ 戻る
+                <span className="text-base leading-none">←</span>
+                <span>
+                  {step === 2
+                    ? "TOPへ戻る"
+                    : `前へ：${STEP_LABELS[step - 2].replace(/\n/g, " ")}`}
+                </span>
               </button>
-              <button
-                type="button"
-                onClick={() => redo()}
-                disabled={!canRedo}
-                className={UNDO_REDO_BTN_CLASS}
-                title="一つ後の操作に進む (⌘+Shift+Z / Ctrl+Y)"
-                aria-label="やり直す"
-              >
-                ↷ 進む
-              </button>
+              {/* 右側: Undo/Redo (編集操作の取り消し) */}
+              <div className="flex items-center gap-1.5">
+                <span className="text-[10px] text-neutral-500 mr-1">編集の取り消し:</span>
+                <button
+                  type="button"
+                  onClick={() => undo()}
+                  disabled={!canUndo}
+                  className={UNDO_REDO_BTN_CLASS}
+                  title="一つ前の操作に戻る (⌘+Z / Ctrl+Z)"
+                  aria-label="元に戻す"
+                >
+                  ↶ 戻る
+                </button>
+                <button
+                  type="button"
+                  onClick={() => redo()}
+                  disabled={!canRedo}
+                  className={UNDO_REDO_BTN_CLASS}
+                  title="一つ後の操作に進む (⌘+Shift+Z / Ctrl+Y)"
+                  aria-label="やり直す"
+                >
+                  ↷ 進む
+                </button>
+              </div>
             </div>
           )}
           {step === 1 && (

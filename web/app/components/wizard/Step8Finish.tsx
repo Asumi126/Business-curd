@@ -389,16 +389,19 @@ export function Step8Finish({
   );
 
   const handleA4MultiUp = async () => {
-    if (!a4FrontRef.current) return;
+    // 塗り足し+トンボ付きの完全アライメント版を使うため、bleed=true のキャプチャ
+     // (exportFrontRef/exportBackRef = 97×61mm) を渡す。aspect ratio 完全一致で
+     // アスペクト崩れを防止。家庭用プリンタの±1-3mmドリフトを吸収。
+    if (!exportFrontRef.current) return;
     if (!assertPrintSettings()) return;
     setBusy("a4");
     try {
-      const layout = await downloadA4MultiUpPdf(a4FrontRef.current, {
+      const layout = await downloadA4MultiUpPdf(exportFrontRef.current, {
         quality,
         filename: `mycard-a4-x${a4Layout.cardsPerSheet}-${templateId}.pdf`,
         cardWidthMm: cardSize.widthMm,
         cardHeightMm: cardSize.heightMm,
-        backNode: duplexMode !== "single" ? a4BackRef.current : null,
+        backNode: duplexMode !== "single" ? exportBackRef.current : null,
         duplexMode,
         cutMarkStyle,
         gapMm,
@@ -413,15 +416,16 @@ export function Step8Finish({
   };
 
   const handleA4Print = async () => {
-    if (!a4FrontRef.current) return;
+    // 同上: bleed=true キャプチャで完全アライメント版を使用
+    if (!exportFrontRef.current) return;
     if (!assertPrintSettings()) return;
     setBusy("a4-print");
     try {
-      await openA4MultiUpPdfForPrint(a4FrontRef.current, {
+      await openA4MultiUpPdfForPrint(exportFrontRef.current, {
         quality,
         cardWidthMm: cardSize.widthMm,
         cardHeightMm: cardSize.heightMm,
-        backNode: duplexMode !== "single" ? a4BackRef.current : null,
+        backNode: duplexMode !== "single" ? exportBackRef.current : null,
         duplexMode,
         cutMarkStyle,
         gapMm,
